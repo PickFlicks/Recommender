@@ -7,6 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from psycopg2 import connect, DatabaseError
 from pandas import read_csv, Series, isnull
 from scipy.sparse import save_npz, load_npz
+import datetime
 
 #================== Database Config ==================#
 database = "pickflix"
@@ -39,12 +40,7 @@ def execute_command(command, output = False):
         cur = con.cursor()
         cur.execute(command)
         if output:
-            result = []
-            identifiers = cur.description
-            values = cur.fetchall()[0]
-            for i in range(len(identifiers)):
-                result.append((identifiers[i][0], values[i]))
-            result = values
+            result = cur.fetchall()[0]
         cur.close()
         con.commit()
     except (Exception, DatabaseError) as error:
@@ -121,7 +117,9 @@ def create_soup(x):
     ('' if isnull(x['vote_average']) else 'v' + str(round(x['vote_average'])) + ' ') + \
     uniquify(str(x['keywords']).split(';'), 'k') + \
     uniquify(str(x['cast']).split(';'), 'c') + \
-    ('' if isnull(x['director']) else 'd' + str(x['director']))
+    ('' if isnull(x['director']) else 'd' + str(x['director'])) + \
+    uniquify(str(x['production_companies']).split(';'), 'pc')
+
 
 def seed_table_movies():
     con = None
@@ -283,7 +281,11 @@ def setup():
 @app.route('/api/movies/recommendations', methods = ['GET'])
 def get_movie_recommendations():
     params = flask.request.args.to_dict()
-    ids = [int(x) for x in flask.request.args.getlist('ids')]
+    ids = flask.request.args.getlist('ids')
+    try:
+        ids = [int(x) for x in ids]
+    except ValueError:
+        return 'invalid id', 400
     if 'key' not in params or params.get('key') not in keys:
         return 'all requests must contain a valid API key', 403
     if 'ids' not in params or len(ids) == 0:
@@ -304,7 +306,7 @@ def get_movie_recommendations():
             sim_scores = sorted(sim_scores, key=lambda results: results[1], reverse=True)
             calculated_similarities[index] = sim_scores
         # only get the NUM_RESULTS number of movies, based on page number
-        for score in sim_scores[(page*NUM_RESULTS):(page+1)*NUM_RESULTS]:
+        for score in sim_scores[(page * NUM_RESULTS):(page + 1) * NUM_RESULTS]:
             # save to dictionary or add values if alread in dictionary
             best[score[0]] = best.get(score[0], 0) + score[1]
 
